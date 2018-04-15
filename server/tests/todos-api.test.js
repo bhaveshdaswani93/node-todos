@@ -359,13 +359,14 @@ describe('POST /users/login',()=>{
                 return done(err);
             }
             User.findOne({email:users[0].email}).then(doc=>{
-                // if(!doc){
-                //     return Promise.reject();
-                // }
-                // expect(doc.tokens).toContain({
-                //     token:res.headers['x-auth'],
-                //     access:'auth'
-                // })  
+                if(!doc){
+                    return Promise.reject();
+                }
+                expect(doc.toObject().tokens[1]).toMatchObject({
+                    token:res.headers['x-auth'],
+                    access:'auth'
+                })
+                  
                 done();
 
             }).catch(e=>{
