@@ -1,3 +1,6 @@
+require('./config/config');
+
+const _ = require('lodash');
 const express = require('express');
 const bodyParser = require('body-parser');
 const {ObjectId} = require('mongodb');
@@ -5,16 +8,18 @@ const {ObjectId} = require('mongodb');
 const {mongoose} = require('./db/mongoose');
 const {Todo} = require('./models/todo');
 const {User} = require('./models/user');
+const {authenticate} = require('./middleware/authenticate');
 
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(bodyParser.json());
-app.post('/todos',(req,res)=>{
+app.post('/todos',authenticate,(req,res)=>{
     console.log(req.body);
     // res.send('123');
     const text = req.body.text;
     const newUser = new Todo({
-        text:text
+        text:text,
+        _creator:req.user._id
     })
     newUser.save().then(doc=>{
         res.status(200).send(doc);
@@ -23,8 +28,8 @@ app.post('/todos',(req,res)=>{
     })
 });
 
-app.get('/todos',(req,res)=>{
-    Todo.find().then(todos=>{
+app.get('/todos',authenticate,(req,res)=>{
+    Todo.find({_creator:req.user._id}).then(todos=>{
         res.send({
             todos
         })
@@ -33,14 +38,17 @@ app.get('/todos',(req,res)=>{
     })
 });
 
-app.get('/todos/:id',(req,res)=>{
+app.get('/todos/:id',authenticate,(req,res)=>{
     // res.send(req.params);
     let id = req.params.id;
     if(!ObjectId.isValid(id))
     {
         return res.status(400).send();
     }
-    Todo.findById(id).then(doc=>{
+    Todo.findOne({
+        _id:id,
+        _creator:req.user._id
+    }).then(doc=>{
         if(!doc){
             return res.status(404).send();
         }
@@ -50,19 +58,92 @@ app.get('/todos/:id',(req,res)=>{
     })
 })
 
-app.delete('/todos/:id',(req,res)=>{
+app.delete('/todos/:id',authenticate,(req,res)=>{
     let id = req.params.id;
     if(!ObjectId.isValid(id))
     {
         return res.status(404).send();
     }
-    Todo.findByIdAndRemove(id).then(doc=>{
+    Todo.findOneAndRemove({
+        _id:id,
+        _creator:req.user._id
+    }).then(doc=>{
         if(!doc)
         {
             return res.status(404).send();
         }
         res.send(doc);
     }).catch(e=>{
+        res.status(400).send();
+    })
+});
+app.patch('/todos/:id',authenticate,(req,res)=>{
+    let id = req.params.id;
+    let body = _.pick(req.body,['text','completed']);
+    if(_.isBoolean(body.completed) && body.completed ){
+        body.completedAt = new Date().getTime();
+    }
+    else{
+        body.completedAt = null;
+    }
+    if(!ObjectId.isValid(id))
+    {
+        return res.status(404).send();
+    }
+    Todo.findOneAndUpdate({
+        _id:id,
+        _creator:req.user._id
+    },body,{new:true}).then(doc=>{
+        if(!doc)
+        {
+            return res.status(404).send();
+        }
+        res.send(doc);
+    }).catch(e=>{
+        res.status(400).send();
+    })
+})
+app.post('/users',(req,res)=>{
+    let body = _.pick(req.body,['email','password']);
+    // body.tokens[0] = {
+    //     access:123,
+    //     token:'hello world'
+    // };
+    let newUser = new User(body);
+    
+    newUser.save().then(doc=>{
+        // res.send(doc)
+        return newUser.genrateToken()
+    }).then((token)=>{
+        res.header('x-auth',token).send(newUser);
+    })
+    .catch(e=>{
+        res.status(400).send(e);
+    })
+});
+
+app.get('/users/me',authenticate,(req,res)=>{
+    res.send(req.user);
+})
+app.post('/users/login',(req,res)=>{
+    let body = _.pick(req.body,['email','password']);
+    // res.send(body);
+    User.findByCredential(body.email,body.password).then(user=>{
+        // let token = user.tokens[0].token;
+        // res.header('x-auth',token).send(user);
+        return  user.genrateToken().then((token)=>{
+            res.header('x-auth',token).send(user);
+        });
+    })
+    .catch(e=>{
+        res.status(400).send();
+    })
+});
+app.delete('/users/me/token',authenticate,(req,res)=>{
+    let user = req.user;
+    user.removeToken(req.token).then(()=>{
+        res.status(200).send();
+    },()=>{
         res.status(400).send();
     })
 })
