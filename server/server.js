@@ -58,24 +58,38 @@ app.get('/todos/:id',authenticate,(req,res)=>{
     })
 })
 
-app.delete('/todos/:id',authenticate,(req,res)=>{
-    let id = req.params.id;
-    if(!ObjectId.isValid(id))
-    {
-        return res.status(404).send();
-    }
-    Todo.findOneAndRemove({
-        _id:id,
-        _creator:req.user._id
-    }).then(doc=>{
+app.delete('/todos/:id',authenticate,async(req,res)=>{
+    try{
+        let id = req.params.id;
+        if(!ObjectId.isValid(id))
+        {
+            return res.status(404).send();
+        }
+        let doc = await Todo.findOneAndRemove({
+            _id:id,
+            _creator:req.user._id
+        })
         if(!doc)
         {
             return res.status(404).send();
         }
         res.send(doc);
-    }).catch(e=>{
+    }catch(e){
         res.status(400).send();
-    })
+    }
+    
+    // Todo.findOneAndRemove({
+    //     _id:id,
+    //     _creator:req.user._id
+    // }).then(doc=>{
+    //     if(!doc)
+    //     {
+    //         return res.status(404).send();
+    //     }
+    //     res.send(doc);
+    // }).catch(e=>{
+    //     res.status(400).send();
+    // })
 });
 app.patch('/todos/:id',authenticate,(req,res)=>{
     let id = req.params.id;
@@ -103,49 +117,73 @@ app.patch('/todos/:id',authenticate,(req,res)=>{
         res.status(400).send();
     })
 })
-app.post('/users',(req,res)=>{
+app.post('/users',async (req,res)=>{
     let body = _.pick(req.body,['email','password']);
     // body.tokens[0] = {
     //     access:123,
     //     token:'hello world'
     // };
     let newUser = new User(body);
-    
-    newUser.save().then(doc=>{
-        // res.send(doc)
-        return newUser.genrateToken()
-    }).then((token)=>{
-        res.header('x-auth',token).send(newUser);
-    })
-    .catch(e=>{
+    try {
+       await newUser.save()
+       let token = await newUser.genrateToken();
+       res.header('x-auth',token).send(newUser);
+    }catch(e){
         res.status(400).send(e);
-    })
+    }
+    
+    // newUser.save().then(doc=>{
+    //     // res.send(doc)
+    //     return newUser.genrateToken()
+    // }).then((token)=>{
+    //     res.header('x-auth',token).send(newUser);
+    // })
+    // .catch(e=>{
+    //     res.status(400).send(e);
+    // })
 });
 
 app.get('/users/me',authenticate,(req,res)=>{
     res.send(req.user);
 })
-app.post('/users/login',(req,res)=>{
+app.post('/users/login',async (req,res)=>{
     let body = _.pick(req.body,['email','password']);
     // res.send(body);
-    User.findByCredential(body.email,body.password).then(user=>{
-        // let token = user.tokens[0].token;
-        // res.header('x-auth',token).send(user);
-        return  user.genrateToken().then((token)=>{
-            res.header('x-auth',token).send(user);
-        });
-    })
-    .catch(e=>{
+    try {
+        const user = await User.findByCredential(body.email,body.password);
+        const token =await user.genrateToken();
+        res.header('x-auth',token).send(user);
+
+    } catch(e) {
         res.status(400).send();
-    })
+    }
+   
+    // User.findByCredential(body.email,body.password).then(user=>{
+    //     // let token = user.tokens[0].token;
+    //     // res.header('x-auth',token).send(user);
+    //     return  user.genrateToken().then((token)=>{
+    //         res.header('x-auth',token).send(user);
+    //     });
+    // })
+    // .catch(e=>{
+    //     res.status(400).send();
+    // })
 });
-app.delete('/users/me/token',authenticate,(req,res)=>{
+app.delete('/users/me/token',authenticate,async (req,res)=>{
+
     let user = req.user;
-    user.removeToken(req.token).then(()=>{
+
+    try {
+        await user.removeToken(req.token);
         res.status(200).send();
-    },()=>{
+    } catch(e){
         res.status(400).send();
-    })
+    }
+    // user.removeToken(req.token).then(()=>{
+    //     res.status(200).send();
+    // },()=>{
+    //     res.status(400).send();
+    // })
 })
 
 app.listen(port,()=>{
